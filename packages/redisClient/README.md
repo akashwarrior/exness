@@ -1,4 +1,4 @@
-# poller
+# @exness/redisclient
 
 To install dependencies:
 
