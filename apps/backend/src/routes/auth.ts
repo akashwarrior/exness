@@ -47,8 +47,7 @@ async function handleAuth(req: Request, res: Response) {
             });
 
             if (error) {
-                console.error({ error });
-                throw new Error("Failed to send email");
+                throw new Error(error.message);
             }
         } else {
             console.log({

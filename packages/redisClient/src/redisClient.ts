@@ -39,7 +39,7 @@ export class RedisClient {
     public async xAdd({ key = QUEUE.PRIMARY_QUEUE, id = '*', message, msgType }: {
         key?: QUEUE,
         id?: string,
-        msgType?: EVENT_TYPE;
+        msgType: EVENT_TYPE;
         message: Record<string, string | number | boolean | undefined>
     }) {
         const stringMessage: Record<string, string> = msgType ? { msgType } : {};

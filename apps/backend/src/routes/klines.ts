@@ -16,8 +16,12 @@ router.get('/klines', async (req, res) => {
     }
 
     try {
-        const response = await axios.get(BACKPACK_URL + `?symbol=${asset}&interval=${interval}&startTime=${startTime}`)
+        const response = await axios.get(
+            BACKPACK_URL + `?symbol=${asset}&interval=${interval}&startTime=${startTime}`
+        );
+
         res.status(200).json(response.data)
+
     } catch (e) {
         console.log((e as AxiosError).message);
         res.status(501).json({
