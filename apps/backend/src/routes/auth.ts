@@ -81,7 +81,7 @@ router.get('/signin/post', async (req, res) => {
 
     try {
         const { email } = JWT.verify(token, JWT_SECRET) as JwtPayload;
-        const authToken = JWT.sign({ email }, JWT_SECRET);
+        const authToken = JWT.sign({ email }, JWT_SECRET); // sign in with different token and required payload
 
         client.xAdd({
             msgType: EVENT_TYPE.LOGIN,
@@ -96,7 +96,7 @@ router.get('/signin/post', async (req, res) => {
 
     } catch (e) {
         res.status(501).json({
-            error: "Invalid Token",
+            error: "Failed to verify Token",
         })
     }
 });

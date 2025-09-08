@@ -20,7 +20,7 @@ router.post('/create', async (req, res) => {
     }
 
     try {
-        const response = await publishAndSubscribe(req.body.email, {
+        const response = await publishAndSubscribe(req.headers.email! as string, {
             msgType: EVENT_TYPE.TRADE_OPEN,
             message: { payload: JSON.stringify(data) }
         }, client)
@@ -44,7 +44,7 @@ router.post('/close', async (req, res) => {
     }
 
     try {
-        const response = await publishAndSubscribe(req.body.email, {
+        const response = await publishAndSubscribe(req.headers.email! as string, {
             msgType: EVENT_TYPE.TRADE_CLOSE,
             message: { orderId }
         }, client);

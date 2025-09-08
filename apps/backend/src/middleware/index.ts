@@ -17,10 +17,11 @@ export default function middleware(req: Request, res: Response, next: NextFuncti
 
     try {
         const { email } = JWT.verify(token, JWT_SECRET) as JwtPayload;
-        req.body.email = email;
+        req.headers.email = email;
         next();
 
     } catch (e) {
+        console.log(e);
         res.status(401).json({
             error: "Invalid Token"
         })

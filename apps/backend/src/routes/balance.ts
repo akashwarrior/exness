@@ -10,14 +10,15 @@ async function balanceHandler(req: Request, res: Response) {
     const asset = req.params?.asset ?? "";
 
     try {
-        const response = await publishAndSubscribe(req.body.email, {
+        const response = await publishAndSubscribe(req.headers.email! as string, {
             msgType: EVENT_TYPE.BALANCE,
             message: { asset }
         }, client)
 
         res.status(200).json(response)
 
-    } catch {
+    } catch (e) {
+        console.log(e)
         res.status(401).json({
             error: "Failed to get balance",
         })
