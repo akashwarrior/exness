@@ -3,6 +3,7 @@ import JWT, { type JwtPayload } from 'jsonwebtoken';
 import { generateMessage } from '../config/constant';
 import { EVENT_TYPE, RedisClient } from "@exness/redisClient";
 import { Resend } from 'resend';
+import { PrismaClient } from '@exness/db';
 import { AuthSchema } from "../config/zodSchema";
 import dotenv from 'dotenv';
 import z from "zod";
@@ -18,6 +19,7 @@ if (!RESEND_API_KEY) {
 }
 
 const resend = new Resend(RESEND_API_KEY);
+const prisma = new PrismaClient()
 const client = new RedisClient()
 client.connect();
 
@@ -81,13 +83,28 @@ router.get('/signin/post', async (req, res) => {
 
     try {
         const { email } = JWT.verify(token, JWT_SECRET) as JwtPayload;
-        const authToken = JWT.sign({ email }, JWT_SECRET); // sign in with different token and required payload
+
+        const { id } = await prisma.user.upsert({
+            where: {
+                email: email
+            },
+            create: {
+                email: email,
+            },
+            update: {
+                lastLoggedIn: new Date(),
+            },
+            select: {
+                id: true,
+            }
+        })
 
         client.xAdd({
             msgType: EVENT_TYPE.LOGIN,
-            message: { email },
+            message: { email: id },
         })
 
+        const authToken = JWT.sign({ email: id }, JWT_SECRET); // sign in with different token and required payload
         res.cookie("session_token", authToken);
 
         res.status(200).json({
@@ -96,7 +113,7 @@ router.get('/signin/post', async (req, res) => {
 
     } catch (e) {
         res.status(501).json({
-            error: "Failed to verify Token",
+            error: "Failed to login",
         })
     }
 });

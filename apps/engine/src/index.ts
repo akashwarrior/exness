@@ -1,4 +1,5 @@
 import { RedisClient, EVENT_TYPE, QUEUE } from '@exness/redisClient';
+import { PrismaClient } from '@exness/db'
 
 type Balance = {
     [key: string]: {
@@ -24,7 +25,19 @@ interface Trade {
     margin: number;
 }
 
+const prisma = new PrismaClient()
+
 const ASSETS: { [asset: string]: Msg } = {};
+const DB_ASSETS = (
+    await prisma.asset.findMany({
+        select: {
+            symbol: true,
+            id: true,
+        }
+    })
+).map(asset => ({
+    [asset.symbol]: asset.id
+}))[0]!;
 
 const USER_BALACNE: { [userId: string]: Balance } = {};
 const ORDERS = new Map<string, Trade[]>();
@@ -88,16 +101,7 @@ async function main() {
                 break;
 
             case EVENT_TYPE.TRADE_CLOSE:
-                const closeOrderMsg = closeOrder({ userId: message.email!, orderId: message.orderId! });
-
-                client.xAdd({
-                    key: QUEUE.WORKER_QUEUE,
-                    msgType: EVENT_TYPE.TRADE_CLOSE,
-                    message: {
-                        id: message.id,
-                        ...closeOrderMsg,
-                    }
-                });
+                closeOrder({ userId: message.email!, orderId: message.orderId!, uniqueId: message.id });
                 break;
 
             case EVENT_TYPE.BALANCE:
@@ -134,7 +138,7 @@ function executeOrder({ asset, email, leverage, margin, type }: {
 
     if (!actualAsset) {
         return {
-            message: "Insufficient balance",
+            message: "Invalid asset",
         }
     }
     const { decimal: assetDecimal, decimalPrice: assetPrice } = actualAsset;
@@ -252,32 +256,48 @@ function handlePriceChnage() {
     }
 }
 
-function closeOrder({ userId, orderId }: { userId: string, orderId: string }): Record<string, string | number> {
+function closeOrder({ userId, orderId, uniqueId }: { userId: string, orderId: string, uniqueId?: string }) {
     const trade = ORDERS.get(userId)?.find(order => order.orderId === orderId);
 
-    if (!trade) {
+    function init() {
+        if (!trade) {
+            return {
+                message: "Order not found",
+            }
+        }
+
+        const { decimal: assetDecimal, decimalPrice: currentPrice } = ASSETS[trade.asset]!
+        const tradeValue = Number((trade.pnl + trade.margin).toFixed(BALANCE_DECIMAL));
+
+        // update user asset balance
+        USER_BALACNE[trade.email]!.USD!.decimalBalance += tradeValue;
+        USER_BALACNE[trade.email]!.USD!.balance += tradeValue * (10 ** assetDecimal);
+
+        USER_BALACNE[trade.email]![trade.asset]!.decimalBalance -= tradeValue;
+        USER_BALACNE[trade.email]![trade.asset]!.balance -= tradeValue * (10 ** assetDecimal);
+
+        const filteredOrders = ORDERS.get(userId)?.filter(order => order.orderId !== orderId) ?? [];
+        ORDERS.set(userId, filteredOrders);
+
+        trade.closePrice = currentPrice;
+
         return {
-            message: "Order not found",
+            ...trade,
+            assetId: DB_ASSETS[trade.asset!],
+            balance: USER_BALACNE[trade.email]!.USD!.balance,
         }
     }
 
-    const { decimal: assetDecimal } = ASSETS[trade.asset]!
-    const tradeValue = Number((trade.pnl + trade.margin).toFixed(BALANCE_DECIMAL));
+    const closeOrderMsg = init();
 
-    // update user asset balance
-    USER_BALACNE[trade.email]!.USD!.decimalBalance += tradeValue;
-    USER_BALACNE[trade.email]!.USD!.balance += tradeValue * (10 ** assetDecimal);
-
-    USER_BALACNE[trade.email]![trade.asset]!.decimalBalance -= tradeValue;
-    USER_BALACNE[trade.email]![trade.asset]!.balance -= tradeValue * (10 ** assetDecimal);
-
-    const filteredOrders = ORDERS.get(userId)?.filter(order => order.orderId !== orderId) ?? [];
-    ORDERS.set(userId, filteredOrders);
-
-    return {
-        ...trade,
-        balance: USER_BALACNE[trade.email]!.USD!.balance,
-    }
+    client.xAdd({
+        key: QUEUE.WORKER_QUEUE,
+        msgType: EVENT_TYPE.TRADE_CLOSE,
+        message: {
+            id: uniqueId,
+            ...closeOrderMsg,
+        }
+    });
 }
 
 main();
