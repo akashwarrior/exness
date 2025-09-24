@@ -1,6 +1,12 @@
-const BASE_URL = "http://localhost:3000"
+const BASE_URL = "http://localhost:3000";
 
-export const generateMessage = ({ token, email }: { token: string, email: string }) => `
+export const generateMessage = ({
+    token,
+    email,
+}: {
+    token: string;
+    email: string;
+}) => `
 <div>
     Hello,
 
@@ -18,4 +24,4 @@ export const generateMessage = ({ token, email }: { token: string, email: string
     If you don't know what this is about, then someone has probably entered your email address by mistake. Sorry about that,
     you can ignore this email safely.
 </div>
-`
+`;

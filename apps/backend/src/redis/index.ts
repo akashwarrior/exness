@@ -17,22 +17,22 @@ class RedisConsumer extends RedisClient {
                 if (!id) continue;
 
                 console.log(message);
-                let data = {}
+                let data = {};
 
                 if (message.message) {
-                    data = { message: message.message }
+                    data = { message: message.message };
                 } else {
                     switch (message.type) {
                         case EVENT_TYPE.TRADE_OPEN:
-                            data = { orderId: message.orderId! }
+                            data = { orderId: message.orderId! };
                             break;
 
                         case EVENT_TYPE.TRADE_CLOSE:
-                            data = { balance: Number(message.balance!) }
+                            data = { orderId: Number(message.orderId!) };
                             break;
 
                         case EVENT_TYPE.BALANCE:
-                            data = message?.balance ? { balance: Number(message.balance!) } : JSON.parse(message.assetBalance!);
+                            data = JSON.parse(message?.balance || '{}');
                             break;
                     }
                 }
@@ -49,9 +49,9 @@ class RedisConsumer extends RedisClient {
             const timeout = setTimeout(reject, 5000);
             this.callbacks[uniqueId] = (data) => {
                 timeout.close();
-                resolve(data)
+                resolve(data);
             };
-        })
+        });
     }
 }
 
@@ -60,21 +60,19 @@ const redisConsumer = new RedisConsumer();
 function publishAndSubscribe(
     email: string,
     data: {
-        msgType: EVENT_TYPE,
-        message: Record<string, string>
+        msgType: EVENT_TYPE;
+        message: Record<string, string>;
     },
-    client: RedisClient
+    client: RedisClient,
 ) {
     const uniqueId = email + performance.now().toFixed(0);
     data.message.id = uniqueId;
     data.message.email = email;
 
-    return new Promise<Object>(
-        async (resolve, reject) => {
-            redisConsumer.subscribeEvent(uniqueId).then(resolve).catch(reject);
-            await client.xAdd(data)
-        }
-    )
+    return new Promise<Object>(async (resolve, reject) => {
+        redisConsumer.subscribeEvent(uniqueId).then(resolve).catch(reject);
+        await client.xAdd(data);
+    });
 }
 
-export { publishAndSubscribe }
+export { publishAndSubscribe };

@@ -1,11 +1,11 @@
 import { Router, type Request, type Response } from "express";
-import JWT, { type JwtPayload } from 'jsonwebtoken';
-import { generateMessage } from '../config/constant';
+import JWT, { type JwtPayload } from "jsonwebtoken";
+import { generateMessage } from "../config/constant";
 import { EVENT_TYPE, RedisClient } from "@exness/redisClient";
-import { Resend } from 'resend';
-import { PrismaClient } from '@exness/db';
+import { Resend } from "resend";
+import { PrismaClient } from "@exness/db";
 import { AuthSchema } from "../config/zodSchema";
-import dotenv from 'dotenv';
+import dotenv from "dotenv";
 import z from "zod";
 
 dotenv.config();
@@ -19,11 +19,11 @@ if (!RESEND_API_KEY) {
 }
 
 const resend = new Resend(RESEND_API_KEY);
-const prisma = new PrismaClient()
-const client = new RedisClient()
+const prisma = new PrismaClient();
+const client = new RedisClient();
 client.connect();
 
-const router = Router()
+const router = Router();
 
 async function handleAuth(req: Request, res: Response) {
     const body = req.body;
@@ -32,19 +32,19 @@ async function handleAuth(req: Request, res: Response) {
     if (error) {
         return res.status(401).json({
             error: "Invalid Inputs",
-        })
+        });
     }
 
     try {
-        const token = JWT.sign({ email: data.email }, JWT_SECRET,
-            { expiresIn: '5 Mins' }
-        );
+        const token = JWT.sign({ email: data.email }, JWT_SECRET, {
+            expiresIn: "5 Mins",
+        });
 
         if (process.env.NODE_ENV === PROD) {
             const { error } = await resend.emails.send({
-                from: 'Acme <onboarding@resend.dev>',
+                from: "Acme <onboarding@resend.dev>",
                 to: [data.email],
-                subject: 'Exness-clone: verfiy email address',
+                subject: "Exness-clone: verfiy email address",
                 html: generateMessage({ token, email: data.email }),
             });
 
@@ -54,31 +54,29 @@ async function handleAuth(req: Request, res: Response) {
         } else {
             console.log({
                 token,
-            })
+            });
         }
 
         res.status(200).json({
             message: "Login link sent to your email",
-        })
-
+        });
     } catch (e) {
         console.log("SignUp Error", e);
         res.status(501).json({
             error: "Failed to authenticate",
-        })
+        });
     }
 }
 
-router.post('/signup', handleAuth);
-router.post('/signin', handleAuth);
+router.post("/signup", handleAuth);
+router.post("/signin", handleAuth);
 
-
-router.get('/signin/post', async (req, res) => {
+router.get("/signin/post", async (req, res) => {
     const token = req.query?.token as string;
     if (!token) {
         return res.status(501).json({
             error: "Invalid Token",
-        })
+        });
     }
 
     try {
@@ -86,7 +84,7 @@ router.get('/signin/post', async (req, res) => {
 
         const { id } = await prisma.user.upsert({
             where: {
-                email: email
+                email: email,
             },
             create: {
                 email: email,
@@ -96,26 +94,25 @@ router.get('/signin/post', async (req, res) => {
             },
             select: {
                 id: true,
-            }
-        })
+            },
+        });
 
         client.xAdd({
             msgType: EVENT_TYPE.LOGIN,
             message: { email: id },
-        })
+        });
 
         const authToken = JWT.sign({ email: id }, JWT_SECRET); // sign in with different token and required payload
         res.cookie("session_token", authToken);
 
         res.status(200).json({
             message: "Login Successful",
-        })
-
+        });
     } catch (e) {
         res.status(501).json({
             error: "Failed to login",
-        })
+        });
     }
 });
 
-export default router; 
+export default router;

@@ -1,12 +1,20 @@
-import { PrismaClient } from "./generated/prisma"
+import { PrismaClient } from "./generated/prisma";
 
-function getAsset({ symbol, decimal, name }: { symbol: string, decimal: number, name: string }) {
+function getAsset({
+    symbol,
+    decimal,
+    name,
+}: {
+    symbol: string;
+    decimal: number;
+    name: string;
+}) {
     return {
         symbol: symbol,
         decimal: decimal,
-        imageUrl: `https://backpack.exchange/_next/image?url=%2Fcoins%2F${symbol.split('_')[0]?.toLowerCase()}.png&w=48&q=75`,
+        imageUrl: `https://backpack.exchange/_next/image?url=%2Fcoins%2F${symbol.split("_")[0]?.toLowerCase()}.png&w=48&q=75`,
         name: name,
-    }
+    };
 }
 
 async function seedAsset() {
@@ -16,22 +24,22 @@ async function seedAsset() {
         await prisma.asset.createMany({
             data: [
                 getAsset({
-                    symbol: "SOL_USD",
+                    symbol: "SOL_USDC",
                     decimal: 2,
-                    name: "Solana"
+                    name: "Solana",
                 }),
                 getAsset({
-                    symbol: "ETH_USD",
+                    symbol: "ETH_USDC",
                     decimal: 2,
-                    name: "Ethereum"
+                    name: "Ethereum",
                 }),
                 getAsset({
-                    symbol: "BTC_USD",
+                    symbol: "BTC_USDC",
                     decimal: 5,
                     name: "Bitcoin",
                 }),
-            ]
-        })
+            ],
+        });
 
         prisma.$disconnect();
     } catch (e) {
@@ -39,4 +47,4 @@ async function seedAsset() {
     }
 }
 
-seedAsset()
+seedAsset();

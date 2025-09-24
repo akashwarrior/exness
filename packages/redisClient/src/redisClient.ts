@@ -10,22 +10,29 @@ export class RedisClient {
     }
 
     public async connect() {
-        await this.client.connect();
+        return this.client.connect();
     }
 
     public disconnect() {
         this.client.destroy();
     }
 
-    public async xRead({ key = QUEUE.PRIMARY_QUEUE, id = "$", options = { BLOCK: 0 } }: {
-        key?: QUEUE,
-        id?: string,
-        options?: { BLOCK?: number; COUNT?: number }
-    }): Promise<Record<string, string> & { type: EVENT_TYPE } | null> {
-        const data = await this.client.xRead({
-            key: key,
-            id: id,
-        }, options)
+    public async xRead({
+        key = QUEUE.PRIMARY_QUEUE,
+        id = "$",
+        options = { BLOCK: 0 },
+    }: Partial<{
+        key: QUEUE;
+        id: string;
+        options: { BLOCK?: number; COUNT?: number };
+    }>): Promise<(Record<string, string> & { type: EVENT_TYPE }) | null> {
+        const data = await this.client.xRead(
+            {
+                key: key,
+                id: id,
+            },
+            options,
+        );
 
         const message = data?.[0]?.messages[0]?.message;
 
@@ -33,16 +40,23 @@ export class RedisClient {
             return null;
         }
 
-        return { ...message, type: message.msgType as EVENT_TYPE }
+        return { ...message, type: message.msgType as EVENT_TYPE };
     }
 
-    public async xAdd({ key = QUEUE.PRIMARY_QUEUE, id = '*', message, msgType }: {
-        key?: QUEUE,
-        id?: string,
+    public async xAdd({
+        key = QUEUE.PRIMARY_QUEUE,
+        id = "*",
+        message,
+        msgType,
+    }: {
+        key?: QUEUE;
+        id?: string;
         msgType: EVENT_TYPE;
-        message: Record<string, string | number | boolean | undefined>
+        message: Record<string, string | number | boolean | undefined>;
     }) {
-        const stringMessage: Record<string, string> = msgType ? { msgType } : {};
+        const stringMessage: Record<string, string> = msgType
+            ? { msgType }
+            : {};
         for (const [k, v] of Object.entries(message)) {
             if (k !== undefined && v !== undefined) {
                 stringMessage[k] = String(v);

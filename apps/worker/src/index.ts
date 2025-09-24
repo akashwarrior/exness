@@ -1,5 +1,5 @@
-import { EVENT_TYPE, QUEUE, RedisClient } from '@exness/redisClient';
-import { PrismaClient, type ExistingTrades } from '@exness/db'
+import { EVENT_TYPE, QUEUE, RedisClient } from "@exness/redisClient";
+import { PrismaClient, type ExistingTrades } from "@exness/db";
 
 const client = new RedisClient();
 const prisma = new PrismaClient();
@@ -20,13 +20,13 @@ async function main() {
                 openPrice: parseFloat(message.openPrice!),
                 pnl: parseFloat(message.pnl!),
                 userId: message.email!,
-                liquidated: true,   // only storing closed order so liquidating will alwasy be true
+                liquidated: true, // only storing closed order so liquidating will alwasy be true
             };
 
             try {
                 await prisma.existingTrades.create({
                     data: existingOrder,
-                })
+                });
             } catch (e) {
                 console.log("Failed to store trade in DB", e);
             }
@@ -34,4 +34,4 @@ async function main() {
     }
 }
 
-main()
+main();

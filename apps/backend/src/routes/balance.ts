@@ -10,23 +10,26 @@ async function balanceHandler(req: Request, res: Response) {
     const asset = req.params?.asset ?? "";
 
     try {
-        const response = await publishAndSubscribe(req.headers.email! as string, {
-            msgType: EVENT_TYPE.BALANCE,
-            message: { asset }
-        }, client)
+        const response = await publishAndSubscribe(
+            req.headers.email! as string,
+            {
+                msgType: EVENT_TYPE.BALANCE,
+                message: { asset },
+            },
+            client,
+        );
 
-        res.status(200).json(response)
-
+        res.status(200).json(response);
     } catch (e) {
-        console.log(e)
+        console.log(e);
         res.status(401).json({
             error: "Failed to get balance",
-        })
+        });
     }
 }
 
-router.get('/balance', balanceHandler);
+router.get("/balance", balanceHandler);
 
-router.get('/balance/:asset', balanceHandler);
+router.get("/balance/:asset", balanceHandler);
 
 export default router;
