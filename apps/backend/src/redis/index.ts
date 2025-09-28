@@ -32,7 +32,7 @@ class RedisConsumer extends RedisClient {
                             break;
 
                         case EVENT_TYPE.BALANCE:
-                            data = JSON.parse(message?.balance || '{}');
+                            data = JSON.parse(message?.balance || "{}");
                             break;
                     }
                 }

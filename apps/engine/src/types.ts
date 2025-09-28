@@ -14,14 +14,13 @@ export interface AssetPriceUpdate extends AssetState {
     asset: string;
 }
 
-export interface Trade extends OpenTrades {
-    createdAt: number;
+export interface Order extends Omit<OpenOrder, "quantity"> {
     closePrice: number;
     liquidated: boolean;
     pnl: number;
 }
 
-export interface OpenTrades {
+export interface OpenOrder {
     orderId: string;
     email: string;
     type: "long" | "short";
@@ -29,5 +28,6 @@ export interface OpenTrades {
     margin: number;
     openPrice: number;
     leverage: number;
-    quantity: number
+    quantity: number;
+    createdAt: number;
 }

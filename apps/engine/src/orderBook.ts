@@ -1,39 +1,59 @@
-import { USD_DECIMALS, INITIAL_BALANCE, LIQUIDATION_RATIO, SNAPSHOT_INTERVAL_MS, USD } from "./constants";
-import type { AssetPriceUpdate, AssetState, Balance, OpenTrades, Trade } from "./types";
-import { toDecimal, toInteger } from "./utils";
+import { OrderList } from "./orderList";
+import { scaleDecimals, toFixed } from "./utils";
+import {
+    USD_DECIMALS,
+    INITIAL_BALANCE,
+    LIQUIDATION_RATIO,
+    SNAPSHOT_INTERVAL_MS,
+    USD,
+} from "./constants";
+import type {
+    AssetPriceUpdate,
+    AssetState,
+    Balance,
+    OpenOrder,
+    Order,
+} from "./types";
 
-type OrderResponse = (OpenTrades & { createdAt: number }) | { message: string };
+type OrderResponse = (OpenOrder & { createdAt: number }) | { message: string };
 
 export class OrderBook {
-    private readonly assets: Record<string, AssetState> = {};
-    private readonly userBalances: Record<string, Balance> = {};
-    private readonly openOrders: Record<string, OpenTrades> = {};
+    private readonly assets: Record<string, AssetState> = Object.create(null);
+    private readonly userBalances: Record<string, Balance> =
+        Object.create(null);
+    private readonly openOrders = new OrderList();
 
     constructor() {
         setInterval(() => this.storeSnapShot(), SNAPSHOT_INTERVAL_MS);
     }
 
-    public async recoverState() { }
+    public async recoverState() {}
 
-    private storeSnapShot() { }
+    private storeSnapShot() {}
 
     public addUserBalance(email: string): void {
         if (this.userBalances[email]) return;
 
         this.userBalances[email] = {
             [USD]: {
-                qty: toInteger(INITIAL_BALANCE),
+                qty: scaleDecimals(INITIAL_BALANCE, 0, USD_DECIMALS),
                 decimal: USD_DECIMALS,
             },
         };
     }
 
     public getUserBalance(userEmail: string): Balance | undefined {
-        const blc = this.userBalances[userEmail];
-        return blc ? structuredClone(blc) : undefined;
+        const balance = this.userBalances[userEmail];
+        return structuredClone(balance);
     }
 
-    public createOrder({ asset, email, leverage, margin, type }: OpenTrades): OrderResponse {
+    public createOrder({
+        asset,
+        email,
+        leverage,
+        margin,
+        type,
+    }: OpenOrder): OrderResponse {
         const balance = this.userBalances[email];
         const usdWallet = balance?.[USD];
 
@@ -48,42 +68,50 @@ export class OrderBook {
 
         const { decimal: assetDecimal, price: assetPrice } = assetState;
 
-        const normalizedMargin = toDecimal(margin);
-        const marginInAssetDecimals = toInteger(normalizedMargin, assetDecimal);
-        const rawQuantity = marginInAssetDecimals / assetPrice;
-        const quantity = toInteger(rawQuantity, assetDecimal);
+        const marginInAssetDecimals = scaleDecimals(
+            margin,
+            USD_DECIMALS,
+            assetDecimal,
+        );
+        const quantity = toFixed(
+            marginInAssetDecimals / assetPrice,
+            assetDecimal,
+        );
+        const netMargin = quantity * assetPrice;
 
         if (quantity <= 0) {
             return { message: "Order size too small" };
         }
 
-        usdWallet.qty -= margin;
+        usdWallet.qty -= scaleDecimals(netMargin, assetDecimal, USD_DECIMALS);
 
         if (type === "long") {
             balance[asset] = {
-                qty: quantity + (balance[asset]?.qty || 0),
+                qty:
+                    scaleDecimals(quantity, 0, assetDecimal) +
+                    (balance[asset]?.qty || 0),
                 decimal: assetDecimal,
             };
         }
 
-        const orderId = Date.now().toString();
+        const now = Date.now();
 
-        const order: OpenTrades = {
-            orderId,
+        const order: OpenOrder = {
+            orderId: now + performance.now().toFixed(0),
             email,
             type,
             asset,
             leverage,
-            margin: marginInAssetDecimals,
+            margin: netMargin,
             openPrice: assetPrice,
             quantity,
+            createdAt: now,
         };
 
-        this.openOrders[orderId] = order;
+        this.openOrders.insert(order);
 
         return {
             ...order,
-            createdAt: Number(orderId),
         };
     }
 
@@ -95,36 +123,43 @@ export class OrderBook {
             };
         }
 
-        const ordersToDelete: string[] = [];
-
-        for (const trade of Object.values(this.openOrders)) {
-            const assetState = this.assets[trade.asset];
+        const closedOrders: string[] = [];
+        const orders = this.openOrders.getOrders();
+        for (const order of orders) {
+            const assetState = this.assets[order.asset];
             if (!assetState) continue;
 
-            const { price: currentPrice, decimal } = assetState;
-            const pnl = this.calculatePnl(trade, currentPrice, decimal);
+            const { price: currentPrice } = assetState;
+            const pnl = this.calculatePnl(order, currentPrice);
 
-            if (this.shouldLiquidate(pnl, trade.margin)) {
-                const closedOrder = this.closeOrder({ orderId: trade.orderId, liquidated: true });
-                if ("orderId" in closedOrder) {
-                    ordersToDelete.push(closedOrder.orderId);
-                }
+            if (this.shouldLiquidate(pnl, order.margin)) {
+                closedOrders.push(order.orderId);
             }
         }
-        ordersToDelete.forEach(orderId => delete this.openOrders[orderId]);
+        closedOrders.forEach((orderId) =>
+            this.closeOrder({ orderId, liquidated: true }),
+        );
     }
 
-    public closeOrder({ orderId, uniqueId, liquidated = false }: { orderId: string; uniqueId?: string; liquidated?: boolean; }): (Trade | { id?: string, message: string }) {
-        const trade = this.openOrders[orderId];
-        if (!trade) {
+    public closeOrder({
+        orderId,
+        uniqueId,
+        liquidated = false,
+    }: {
+        orderId: string;
+        uniqueId?: string;
+        liquidated?: boolean;
+    }): Order | { id?: string; message: string } {
+        const order = this.openOrders.get(orderId);
+        if (!order) {
             return {
                 id: uniqueId,
                 message: "Already Closed",
             };
         }
 
-        const assetState = this.assets[trade.asset];
-        const balance = this.userBalances[trade.email];
+        const assetState = this.assets[order.asset];
+        const balance = this.userBalances[order.email];
 
         if (!assetState || !balance) {
             return {
@@ -134,25 +169,33 @@ export class OrderBook {
         }
 
         const { price: currentPrice, decimal } = assetState;
-        const pnl = this.calculatePnl(trade, currentPrice, decimal);
+        const pnl = this.calculatePnl(order, currentPrice);
 
         if (!liquidated) {
-            const totalPnl = toInteger(toDecimal(trade.margin + pnl, decimal));
-            balance[USD]!.qty += totalPnl;
+            balance[USD]!.qty += scaleDecimals(
+                order.margin + pnl,
+                decimal,
+                USD_DECIMALS,
+            );
         }
 
-        if (trade.type === "long") {
-            balance[trade.asset]!.qty -= trade.quantity;
+        if (order.type === "long") {
+            balance[order.asset]!.qty -= scaleDecimals(
+                order.quantity,
+                0,
+                decimal,
+            );
         }
 
-        const response: Trade = {
-            ...trade,
-            margin: toInteger(toDecimal(trade.margin, decimal)),
+        const response: Order = {
+            ...order,
+            margin: scaleDecimals(order.margin, decimal, USD_DECIMALS),
             liquidated,
             closePrice: currentPrice,
-            pnl,
-            createdAt: Number(orderId),
+            pnl: scaleDecimals(pnl, decimal, USD_DECIMALS),
         };
+
+        this.openOrders.delete(orderId);
 
         return {
             id: uniqueId,
@@ -160,17 +203,19 @@ export class OrderBook {
         };
     }
 
-    private calculatePnl(trade: OpenTrades, currentPrice: number, decimal: number): number {
-        const qty = trade.quantity * trade.leverage;
-        const openTradeValue = qty * trade.openPrice;
-        const currentTradeValue = qty * currentPrice;
-        const pnlValue = toDecimal(currentTradeValue - openTradeValue, decimal * 2);
+    private calculatePnl(trade: OpenOrder, currentPrice: number): number {
+        const quantity = trade.quantity * trade.leverage;
+        const openTradeValue = Math.trunc(quantity * trade.openPrice);
+        const currentTradeValue = Math.trunc(quantity * currentPrice);
         const direction = trade.type === "long" ? 1 : -1;
-        return direction * toInteger(pnlValue, decimal);
+        return (currentTradeValue - openTradeValue) * direction;
     }
 
     private shouldLiquidate(pnl: number, margin: number): boolean {
         if (pnl >= 0) return false;
-        return (Math.abs(pnl) * LIQUIDATION_RATIO.denominator) >= (margin * LIQUIDATION_RATIO.numerator);
+        return (
+            Math.abs(pnl) * LIQUIDATION_RATIO.denominator >=
+            margin * LIQUIDATION_RATIO.numerator
+        );
     }
 }

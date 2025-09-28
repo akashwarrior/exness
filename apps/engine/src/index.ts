@@ -19,7 +19,9 @@ async function main() {
                 break;
 
             case EVENT_TYPE.ASSETS_PRICE:
-                const assets = JSON.parse(message.price_updates!) as AssetPriceUpdate[];
+                const assets = JSON.parse(
+                    message.price_updates!,
+                ) as AssetPriceUpdate[];
                 orderBook.handlePriceChange(assets);
                 break;
 

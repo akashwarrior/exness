@@ -2,14 +2,13 @@ import { EVENT_TYPE, RedisClient } from "@exness/redisClient";
 import { PrismaClient } from "@exness/db";
 import type { Asset, AssetMessage } from "./types";
 
-const BROADCAST_INTERVAL_MS = 1000;
+
+const BROADCAST_INTERVAL_MS = 100;
 const WEBSOCKET_URL = process.env.WEBSOCKET_URL || "wss://ws.backpack.exchange"; // backpack url
 
 const redisClient = new RedisClient();
 const decimalsBySymbol = new Map<string, number>();
 const pricesBySymbol = new Map<string, Asset>();
-
-let lastBroadcastAt = Date.now();
 
 async function loadAssetDecimals() {
     const prisma = new PrismaClient();
@@ -76,15 +75,6 @@ function handleTickerMessage(data: string) {
         const price = priceInDecimal * 10 ** decimal;
 
         pricesBySymbol.set(symbol, { asset: symbol, price, decimal });
-
-        if ((Date.now() - lastBroadcastAt) >= BROADCAST_INTERVAL_MS) {
-            lastBroadcastAt = Date.now();
-
-            broadcastPriceSnapshot().catch((error) =>
-                console.error("Failed to broadcast price snapshot", error),
-            );
-        }
-
     } catch (error) {
         console.log(data);
         console.error("Failed to parse data stream", error);
@@ -111,9 +101,18 @@ async function main() {
             code: event.code,
             reason: event.reason,
         });
+
+    setInterval(() => {
+        broadcastPriceSnapshot().catch((error) =>
+            console.error("Failed to broadcast price snapshot", error),
+        );
+    }, BROADCAST_INTERVAL_MS);
 }
 
-main().catch((error) => {
-    console.error("Poller failed", error);
-});
-
+while (1) {
+    console.log("Before promise")
+    await new Promise((res, reject) => main().catch(reject)).catch(err =>
+        console.log("Poller Error", err)
+    )
+    console.log("After promise");
+}

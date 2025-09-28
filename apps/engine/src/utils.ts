@@ -1,15 +1,35 @@
 import { USD_DECIMALS } from "./constants";
 
-export function toFixed(num: number, fixedPoint: number = USD_DECIMALS): number {
-    const [integer, decimals] = String(num).split(".");
-    const decimalDigits = Array.from({ length: fixedPoint }, (_, index) => decimals?.[index] ?? "0");
-    return Number(`${integer}.${decimalDigits.join("")}`);
+const MAX_DECIMALS = 10;
+const POWERS_OF_TEN: number[] = Array.from(
+    { length: MAX_DECIMALS + 1 },
+    (_, index) => 10 ** index,
+);
+
+export function getScale(decimals: number): number {
+    if (decimals > 10) return 0;
+    return POWERS_OF_TEN[decimals]!;
 }
 
-export function toInteger(num: number, decimalPoint: number = USD_DECIMALS): number {
-    return toFixed(num, decimalPoint) * (10 ** decimalPoint);
+export function toFixed(
+    num: number,
+    fixedPoint: number = USD_DECIMALS,
+): number {
+    const factor = getScale(fixedPoint);
+    return Math.trunc(num * factor) / factor;
 }
 
-export function toDecimal(num: number, decimalPoint: number = USD_DECIMALS): number {
-    return num / (10 ** decimalPoint);
+export function scaleDecimals(
+    value: number,
+    fromDecimals: number,
+    toDecimals: number,
+): number {
+    if (fromDecimals === toDecimals) return value;
+
+    if (toDecimals > fromDecimals) {
+        return Math.trunc(value * getScale(toDecimals - fromDecimals));
+    }
+
+    const factor = getScale(fromDecimals - toDecimals);
+    return Math.trunc(value / factor);
 }
