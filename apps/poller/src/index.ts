@@ -2,9 +2,9 @@ import { EVENT_TYPE, RedisClient } from "@exness/redisClient";
 import { PrismaClient } from "@exness/db";
 import type { Asset, AssetMessage } from "./types";
 
-
 const BROADCAST_INTERVAL_MS = 100;
 const WEBSOCKET_URL = process.env.WEBSOCKET_URL || "wss://ws.backpack.exchange"; // backpack url
+const RECONNECT_DELAY_MS = 1_000;
 
 const redisClient = new RedisClient();
 const decimalsBySymbol = new Map<string, number>();
@@ -53,6 +53,26 @@ async function broadcastPriceSnapshot() {
     console.log({ price_values: pricesArray });
 }
 
+const broadcastLoop = (() => {
+    let intervalHandle: NodeJS.Timeout | null = null;
+
+    return {
+        start() {
+            if (intervalHandle) return;
+            intervalHandle = setInterval(() => {
+                broadcastPriceSnapshot().catch((error) =>
+                    console.error("Failed to broadcast price snapshot", error),
+                );
+            }, BROADCAST_INTERVAL_MS);
+        },
+        stop() {
+            if (!intervalHandle) return;
+            clearInterval(intervalHandle);
+            intervalHandle = null;
+        },
+    };
+})();
+
 function subscribeToAssets(socket: WebSocket) {
     for (const symbol of decimalsBySymbol.keys()) {
         socket.send(
@@ -71,14 +91,50 @@ function handleTickerMessage(data: string) {
         const decimal = decimalsBySymbol.get(symbol)!;
 
         const midpoint = (Number(ask) + Number(bid)) / 2;
-        const priceInDecimal = Number(midpoint.toFixed(decimal));
-        const price = priceInDecimal * 10 ** decimal;
+        const price = Math.trunc(midpoint * (10 ** decimal));
 
         pricesBySymbol.set(symbol, { asset: symbol, price, decimal });
     } catch (error) {
         console.log(data);
         console.error("Failed to parse data stream", error);
     }
+}
+
+function createSocketSession(): Promise<void> {
+    return new Promise((resolve) => {
+        const socket = new WebSocket(WEBSOCKET_URL);
+
+        const teardown = () => {
+            broadcastLoop.stop();
+            socket.onopen = null;
+            socket.onmessage = null;
+            socket.onerror = null;
+            socket.onclose = null;
+        };
+
+        socket.onopen = () => {
+            subscribeToAssets(socket);
+            broadcastLoop.start();
+        };
+
+        socket.onmessage = ({ data }) => handleTickerMessage(data as string);
+
+        socket.onerror = (event) => {
+            console.error("WebSocket error", event);
+            teardown();
+            socket.close();
+            resolve();
+        };
+
+        socket.onclose = (event) => {
+            console.warn("WebSocket connection closed", {
+                code: event.code,
+                reason: event.reason,
+            });
+            teardown();
+            resolve();
+        };
+    });
 }
 
 async function main() {
@@ -91,28 +147,11 @@ async function main() {
 
     await redisClient.connect();
 
-    const socket = new WebSocket(WEBSOCKET_URL);
-
-    socket.onopen = () => subscribeToAssets(socket);
-    socket.onmessage = ({ data }) => handleTickerMessage(data as string);
-    socket.onerror = (event) => console.error("WebSocket error", event);
-    socket.onclose = (event) =>
-        console.warn("WebSocket connection closed", {
-            code: event.code,
-            reason: event.reason,
-        });
-
-    setInterval(() => {
-        broadcastPriceSnapshot().catch((error) =>
-            console.error("Failed to broadcast price snapshot", error),
-        );
-    }, BROADCAST_INTERVAL_MS);
+    while (true) {
+        await createSocketSession();
+        await new Promise((resolve) => setTimeout(resolve, RECONNECT_DELAY_MS));
+        console.log("Reconnecting WebSocket...");
+    }
 }
 
-while (1) {
-    console.log("Before promise")
-    await new Promise((res, reject) => main().catch(reject)).catch(err =>
-        console.log("Poller Error", err)
-    )
-    console.log("After promise");
-}
+main()
