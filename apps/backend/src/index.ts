@@ -1,40 +1,40 @@
-import expres, { Router } from "express";
-import cors from "cors";
 import cookieParser from "cookie-parser";
-import dotnev from "dotenv";
-import authRouter from "./routes/auth";
-import middleware from "./middleware";
-import tradeRouter from "./routes/trade";
+import cors from "cors";
+import dotenv from "dotenv";
+import express, { Router } from "express";
+
 import balanceRouter from "./routes/balance";
 import klinesRouter from "./routes/klines";
-import suppportedAssetsRouter from "./routes/supporttedAssets";
+import middleware from "./middleware";
+import supportedAssetsRouter from "./routes/supporttedAssets";
+import authRouter from "./routes/auth";
+import tradeRouter from "./routes/trade";
 
-dotnev.config();
+dotenv.config();
 
 const PORT = process.env.PORT || 3001;
-const app = expres();
+const app = express();
+const apiRouter = Router();
 
 app.use(cookieParser());
-app.use(expres.json());
+app.use(express.json());
 app.use(
     cors({
         origin: "*",
     }),
 );
 
-const router = Router();
+app.use("/api/v1", apiRouter);
 
-app.use("/api/v1", router);
+apiRouter.use(authRouter);
+apiRouter.use(klinesRouter);
+apiRouter.use(supportedAssetsRouter);
 
-router.use(authRouter);
-router.use(klinesRouter);
-router.use(suppportedAssetsRouter);
+apiRouter.use(middleware);
 
-router.use(middleware);
-
-router.use(balanceRouter);
-router.use("/trade", tradeRouter);
+apiRouter.use(balanceRouter);
+apiRouter.use("/trade", tradeRouter);
 
 app.listen(PORT, () => {
-    console.log("listening on port", PORT);
+    console.log("Listening on port", PORT);
 });

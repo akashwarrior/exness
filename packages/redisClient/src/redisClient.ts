@@ -1,9 +1,23 @@
 import { createClient } from "redis";
+import { EVENT_TYPE, QUEUE, } from "./types";
 import type { RedisClientType } from "@redis/client";
-import { EVENT_TYPE, QUEUE } from "./types";
+import type { StreamMessage, StreamReadOptions } from "./types";
+
+const DEFAULT_CONSUMER_GROUP = "consumer_group";
+const DEFAULT_CONSUMER_NAME = "engine";
+
+type StreamEntry = {
+    id: string;
+    message: Record<string, string>;
+};
+
+type StreamAddParams = Partial<Omit<StreamReadOptions, "options">> & {
+    msgType: EVENT_TYPE;
+    message: Record<string, string | number | boolean | undefined>;
+};
 
 export class RedisClient {
-    private client: RedisClientType;
+    private readonly client: RedisClientType;
 
     constructor() {
         this.client = createClient();
@@ -13,34 +27,52 @@ export class RedisClient {
         return this.client.connect();
     }
 
-    public disconnect() {
+    public disconnect(): void {
         this.client.destroy();
     }
 
     public async xRead({
         key = QUEUE.PRIMARY_QUEUE,
+        id = "0",
+        options = { BLOCK: 0 },
+    }: Partial<StreamReadOptions>): Promise<StreamMessage[]> {
+        const response = await this.client.xRead({ key, id }, options);
+        if (!response) {
+            return [];
+        }
+
+        return this.extractMessages(response.flatMap((entry) => entry.messages));
+    }
+
+    public async createGroup(id: string = "0"): Promise<void> {
+        try {
+            await this.client.xGroupCreate(
+                QUEUE.PRIMARY_QUEUE,
+                DEFAULT_CONSUMER_GROUP,
+                id,
+            );
+        } catch (error) {
+            console.log("Consumer group already exists.");
+        }
+    }
+
+    public async xReadGroup({
+        key = QUEUE.PRIMARY_QUEUE,
         id = "$",
         options = { BLOCK: 0 },
-    }: Partial<{
-        key: QUEUE;
-        id: string;
-        options: { BLOCK?: number; COUNT?: number };
-    }>): Promise<(Record<string, string> & { type: EVENT_TYPE }) | null> {
-        const data = await this.client.xRead(
-            {
-                key: key,
-                id: id,
-            },
+    }: Partial<StreamReadOptions>): Promise<StreamMessage[]> {
+        const response = await this.client.xReadGroup(
+            DEFAULT_CONSUMER_GROUP,
+            DEFAULT_CONSUMER_NAME,
+            { id, key },
             options,
         );
 
-        const message = data?.[0]?.messages[0]?.message;
-
-        if (!message || !message?.msgType) {
-            return null;
+        if (!response) {
+            return [];
         }
 
-        return { ...message, type: message.msgType as EVENT_TYPE };
+        return this.extractMessages(response.flatMap((entry) => entry.messages));
     }
 
     public async xAdd({
@@ -48,20 +80,62 @@ export class RedisClient {
         id = "*",
         message,
         msgType,
-    }: {
-        key?: QUEUE;
-        id?: string;
-        msgType: EVENT_TYPE;
-        message: Record<string, string | number | boolean | undefined>;
-    }) {
-        const stringMessage: Record<string, string> = msgType
-            ? { msgType }
-            : {};
-        for (const [k, v] of Object.entries(message)) {
-            if (k !== undefined && v !== undefined) {
-                stringMessage[k] = String(v);
+    }: StreamAddParams): Promise<string> {
+        const payload: Record<string, string> = { msgType };
+
+        for (const [field, value] of Object.entries(message)) {
+            if (field !== undefined && value !== undefined) {
+                payload[field] = String(value);
             }
         }
-        return await this.client.xAdd(key, id, stringMessage);
+
+        return this.client.xAdd(key, id, payload);
+    }
+
+    public async xRange({
+        key = QUEUE.PRIMARY_QUEUE,
+        start,
+        end,
+        exclusive = false,
+        options,
+    }: Partial<Omit<StreamReadOptions, "id">> & {
+        start: string;
+        end: string;
+        exclusive: boolean;
+    }): Promise<StreamMessage[]> {
+        const formattedStart = exclusive ? `(${start}` : start;
+        const response = await this.client.xRange(
+            key,
+            formattedStart,
+            end,
+            options,
+        );
+        return this.extractMessages(response);
+    }
+
+    public async xPending() {
+        return this.client.xPending(QUEUE.PRIMARY_QUEUE, DEFAULT_CONSUMER_GROUP);
+    }
+
+    public async xAck({ key, id }: Omit<StreamReadOptions, "options">) {
+        return this.client.xAck(key, DEFAULT_CONSUMER_GROUP, id);
+    }
+
+    private extractMessages(entries: StreamEntry[]): StreamMessage[] {
+        const messages: StreamMessage[] = [];
+        for (const { id, message } of entries) {
+            const type = message?.msgType as EVENT_TYPE | undefined;
+            if (!type) {
+                continue;
+            }
+
+            messages.push({
+                id,
+                type,
+                message,
+            });
+        }
+
+        return messages;
     }
 }
