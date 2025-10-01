@@ -1,7 +1,7 @@
 import { EVENT_TYPE, QUEUE, RedisClient } from "@exness/redisClient";
 
 class RedisConsumer extends RedisClient {
-    private callbacks: Record<string, (val: Object) => void> = {};
+    private callbacks: Record<string, (val: Record<string, number | string>) => void> = {};
 
     constructor() {
         super();
@@ -12,16 +12,12 @@ class RedisConsumer extends RedisClient {
         await this.connect();
         try {
             while (1) {
-                const message = await this.xRead({ key: QUEUE.WORKER_QUEUE });
-                const id = message?.id;
-                if (!id) continue;
+                const messages = await this.xRead({ key: QUEUE.WORKER_QUEUE });
+                for (const { message } of messages) {
+                    const id = message?.id;
+                    if (!id) continue;
+                    let data = {};
 
-                console.log(message);
-                let data = {};
-
-                if (message.message) {
-                    data = { message: message.message };
-                } else {
                     switch (message.type) {
                         case EVENT_TYPE.TRADE_OPEN:
                             data = { orderId: message.orderId! };
@@ -34,10 +30,13 @@ class RedisConsumer extends RedisClient {
                         case EVENT_TYPE.BALANCE:
                             data = JSON.parse(message?.balance || "{}");
                             break;
+
+                        case EVENT_TYPE.ERROR:
+                            data = { message: message.message };
                     }
+                    this.callbacks[id]!(data);
+                    delete this.callbacks[id];
                 }
-                this.callbacks[id]!(data);
-                delete this.callbacks[id];
             }
         } catch {
             this.readEvents();
@@ -45,7 +44,7 @@ class RedisConsumer extends RedisClient {
     }
 
     public subscribeEvent(uniqueId: string) {
-        return new Promise<Object>((resolve, reject) => {
+        return new Promise<Record<string, number | string>>((resolve, reject) => {
             const timeout = setTimeout(reject, 5000);
             this.callbacks[uniqueId] = (data) => {
                 timeout.close();
@@ -69,7 +68,7 @@ function publishAndSubscribe(
     data.message.id = uniqueId;
     data.message.email = email;
 
-    return new Promise<Object>(async (resolve, reject) => {
+    return new Promise<Record<string, number | string>>(async (resolve, reject) => {
         redisConsumer.subscribeEvent(uniqueId).then(resolve).catch(reject);
         await client.xAdd(data);
     });

@@ -1,36 +1,36 @@
-import type { OpenOrder } from "./types";
+import type { ActiveOrder } from "./types";
 
 export class OrderList {
-    private readonly orderIdx: Record<string, number>;
-    private readonly orders: OpenOrder[];
+    private readonly indexByOrderId: Record<string, number>;
+    private readonly orders: ActiveOrder[];
 
     constructor() {
-        this.orderIdx = Object.create(null);
+        this.indexByOrderId = Object.create(null);
         this.orders = [];
     }
 
-    public insert(order: OpenOrder) {
-        this.orderIdx[order.orderId] = this.orders.length;
+    public insert(order: ActiveOrder) {
+        this.indexByOrderId[order.orderId] = this.orders.length;
         this.orders.push(order);
     }
 
     public delete(orderId: string) {
-        const idx = this.orderIdx[orderId];
+        const idx = this.indexByOrderId[orderId];
         const orderLen = this.orders.length;
         if (idx === undefined || orderLen === 0) return;
 
         if (idx !== orderLen - 1) {
             const lastItem = this.orders[orderLen - 1]!;
             this.orders[idx] = lastItem;
-            this.orderIdx[lastItem.orderId] = idx;
+            this.indexByOrderId[lastItem.orderId] = idx;
         }
 
         this.orders.pop();
-        delete this.orderIdx[orderId];
+        delete this.indexByOrderId[orderId];
     }
 
     public get(orderId: string) {
-        const idx = this.orderIdx[orderId];
+        const idx = this.indexByOrderId[orderId];
         if (idx === undefined) {
             return null;
         }
