@@ -1,0 +1,23 @@
+{
+  "name": "@exness/db",
+  "module": "src/index.ts",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "seed": "bun run src/seed.ts",
+    "migrate": "bunx prisma migrate dev",
+    "generate": "bunx prisma generate"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "prisma": "^6.15.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.15.0"
+  }
+}

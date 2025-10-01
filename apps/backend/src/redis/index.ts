@@ -1,80 +1,118 @@
 import { EVENT_TYPE, QUEUE, RedisClient } from "@exness/redisClient";
 
+type PublishPayload = {
+    msgType: EVENT_TYPE;
+    message: Record<string, string>;
+};
+
+type CallbackResponse = Record<string, number | string>;
+
 class RedisConsumer extends RedisClient {
-    private callbacks: Record<string, (val: Object) => void> = {};
+    private readonly callbacks: Record<string, (value: CallbackResponse) => void>;
+    private reading = false;
 
     constructor() {
         super();
-        this.readEvents();
+        this.callbacks = Object.create(null);
+        void this.startReading();
     }
 
-    public async readEvents() {
-        await this.connect();
-        try {
-            while (1) {
-                const message = await this.xRead({ key: QUEUE.WORKER_QUEUE });
-                const id = message?.id;
-                if (!id) continue;
+    private async startReading(): Promise<void> {
+        if (this.reading) {
+            return;
+        }
 
-                console.log(message);
-                let data = {}
+        this.reading = true;
 
-                if (message.message) {
-                    data = { message: message.message }
-                } else {
-                    switch (message.type) {
-                        case EVENT_TYPE.TRADE_OPEN:
-                            data = { orderId: message.orderId! }
-                            break;
-
-                        case EVENT_TYPE.TRADE_CLOSE:
-                            data = { balance: Number(message.balance!) }
-                            break;
-
-                        case EVENT_TYPE.BALANCE:
-                            data = message?.balance ? { balance: Number(message.balance!) } : JSON.parse(message.assetBalance!);
-                            break;
-                    }
-                }
-                this.callbacks[id]!(data);
-                delete this.callbacks[id];
+        while (this.reading) {
+            try {
+                await this.consumeWorkerQueue();
+            } catch (error) {
+                console.error("Redis consumer error", error);
+                await this.delay(1000);
             }
-        } catch {
-            this.readEvents();
         }
     }
 
-    public subscribeEvent(uniqueId: string) {
-        return new Promise<Object>((resolve, reject) => {
-            const timeout = setTimeout(reject, 5000);
+    private async consumeWorkerQueue(): Promise<void> {
+        await this.connect();
+
+        while (true) {
+            const messages = await this.xRead({ key: QUEUE.WORKER_QUEUE });
+
+            for (const { message } of messages) {
+                const callbackId = message?.id;
+                if (!callbackId) {
+                    continue;
+                }
+
+                const callback = this.callbacks[callbackId];
+                if (!callback) {
+                    continue;
+                }
+
+                callback(this.normalizeMessage(message));
+                delete this.callbacks[callbackId];
+            }
+        }
+    }
+
+    private normalizeMessage(message: Record<string, string>): CallbackResponse {
+        switch (message.type) {
+            case EVENT_TYPE.TRADE_OPEN:
+                return { orderId: message.orderId! };
+
+            case EVENT_TYPE.TRADE_CLOSE:
+                return { orderId: Number(message.orderId!) };
+
+            case EVENT_TYPE.BALANCE:
+                return JSON.parse(message.balance ?? "{}");
+
+            case EVENT_TYPE.ERROR:
+                return { message: message.message! };
+
+            default:
+                return {};
+        }
+    }
+
+    private delay(ms: number): Promise<void> {
+        return new Promise((resolve) => {
+            setTimeout(resolve, ms);
+        });
+    }
+
+    public subscribeEvent(uniqueId: string): Promise<CallbackResponse> {
+        return new Promise<CallbackResponse>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                delete this.callbacks[uniqueId];
+                reject(new Error("Response timeout"));
+            }, 5000);
+
             this.callbacks[uniqueId] = (data) => {
-                timeout.close();
-                resolve(data)
+                clearTimeout(timeout);
+                resolve(data);
             };
-        })
+        });
     }
 }
 
 const redisConsumer = new RedisConsumer();
 
-function publishAndSubscribe(
+async function publishAndSubscribe(
     email: string,
-    data: {
-        msgType: EVENT_TYPE,
-        message: Record<string, string>
-    },
-    client: RedisClient
-) {
-    const uniqueId = email + performance.now().toFixed(0);
+    data: PublishPayload,
+    client: RedisClient,
+): Promise<CallbackResponse> {
+    const uniqueId = `${email}:${Date.now()}:${performance.now().toFixed(0)}`;
+
     data.message.id = uniqueId;
     data.message.email = email;
 
-    return new Promise<Object>(
-        async (resolve, reject) => {
-            redisConsumer.subscribeEvent(uniqueId).then(resolve).catch(reject);
-            await client.xAdd(data)
-        }
-    )
+    const responsePromise = redisConsumer.subscribeEvent(uniqueId);
+    await client.xAdd(data);
+
+    return responsePromise;
 }
 
-export { publishAndSubscribe }
+export { publishAndSubscribe };

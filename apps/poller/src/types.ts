@@ -1,18 +1,13 @@
 export interface AssetMessage {
-  data: {
-    E: number,
-    T: number,
-    a: number,
-    b: number,
-    e: string,
-    m: boolean,
-    p: string,
-    s: string,
-  }
+    data: {
+        a: string;
+        b: string;
+        s: string;
+    };
 }
-  
-export interface Msg {
-  asset: string,
-  price: number,
-  decimal: number,
+
+export interface Asset {
+    asset: string;
+    price: number;
+    decimal: number;
 }

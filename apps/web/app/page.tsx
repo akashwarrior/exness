@@ -1,8 +1,4 @@
 export default function Home() {
-  const app = []
-  return (
-    <div>
-      HIw
-    </div>
-  );
+    const app = [];
+    return <div>Hi</div>;
 }

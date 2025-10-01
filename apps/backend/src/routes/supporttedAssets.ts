@@ -1,10 +1,11 @@
 import { Router } from "express";
 
 const router = Router();
-const ASSETS = ["ETH_USDC", "SOL_USDC", "BTC_USDC"] // TODO: get from db
 
-router.get('/supportedAssets', (req, res) => {
-    res.status(200).json(ASSETS);
+const SUPPORTED_ASSETS = ["ETH_USDC", "SOL_USDC", "BTC_USDC"] as const;
+
+router.get("/supportedAssets", (req, res) => {
+    res.status(200).json(SUPPORTED_ASSETS);
 });
 
 export default router;
